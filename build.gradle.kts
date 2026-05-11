@@ -17,7 +17,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 
     // Apache POI: xlsx (OOXML) 파싱. log4j 충돌 회피를 위해 제외
-    implementation("org.apache.poi:poi-ooxml:5.3.0") {
+    implementation("org.apache.poi:poi-ooxml:5.5.1") {
         exclude(group = "org.apache.logging.log4j")
     }
 
