@@ -1,0 +1,10 @@
+.DS_Store
+.gradle
+.idea
+.intellijPlatform
+.kotlin
+build
+out
+
+# oh-my-claudecode 로컬 상태 (user-local, 공유 제외)
+.omc/

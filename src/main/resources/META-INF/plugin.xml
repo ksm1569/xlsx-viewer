@@ -1,0 +1,27 @@
+<!-- Plugin Configuration File. https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <id>kr.bsen.intellij.xlsxviewer</id>
+    <name>XLSX Viewer (Korean)</name>
+    <vendor email="tnals1569@gmail.com" url="https://github.com/ksm1569">BSEN</vendor>
+
+    <description><![CDATA[
+        한국인 친화 xlsx 뷰어. 시트 탭과 읽기 전용 테이블로 표시.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <!--
+        MVP 코드(XlsxFileType / XlsxFileEditorProvider) 작성 후 주석 해제.
+        현재 시점에는 클래스가 없어 runIde 시 'class not found' 경고가 발생할 수 있음.
+    -->
+    <!--
+    <extensions defaultExtensionNs="com.intellij">
+        <fileType name="XLSX"
+                  implementationClass="kr.bsen.intellij.xlsxviewer.XlsxFileType"
+                  fieldName="INSTANCE"
+                  language=""
+                  extensions="xlsx"/>
+        <fileEditorProvider implementation="kr.bsen.intellij.xlsxviewer.XlsxFileEditorProvider"/>
+    </extensions>
+    -->
+</idea-plugin>
