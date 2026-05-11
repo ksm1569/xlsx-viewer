@@ -10,11 +10,6 @@
 
     <depends>com.intellij.modules.platform</depends>
 
-    <!--
-        MVP 코드(XlsxFileType / XlsxFileEditorProvider) 작성 후 주석 해제.
-        현재 시점에는 클래스가 없어 runIde 시 'class not found' 경고가 발생할 수 있음.
-    -->
-    <!--
     <extensions defaultExtensionNs="com.intellij">
         <fileType name="XLSX"
                   implementationClass="kr.bsen.intellij.xlsxviewer.XlsxFileType"
@@ -23,5 +18,4 @@
                   extensions="xlsx"/>
         <fileEditorProvider implementation="kr.bsen.intellij.xlsxviewer.XlsxFileEditorProvider"/>
     </extensions>
-    -->
 </idea-plugin>

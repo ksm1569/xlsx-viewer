@@ -8,3 +8,9 @@ out
 
 # oh-my-claudecode 로컬 상태 (user-local, 공유 제외)
 .omc/
+
+# 사내 검증용 샘플 자료 - 외부 공개 금지
+doc/
+
+# MS Office 자동 락/임시 파일
+~$*
