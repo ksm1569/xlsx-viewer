@@ -272,11 +272,11 @@ git push -u origin main
 
 ## 11. 검증 기준 (Definition of Done — MVP)
 
-- [ ] `./gradlew runIde` 로 샌드박스 IDE 가 실행되고, 그 안에서 임의의 .xlsx 파일을 더블클릭하면 커스텀 뷰어가 열린다
-- [ ] `doc/감리작업/BAS_DE11_프로그램 목록_v1.8_20260508.xlsx` 가 정상 표시되며 한글이 깨지지 않는다
-- [ ] 시트 탭으로 시트 전환 가능
-- [ ] 결합셀이 많은 메뉴구조 xlsx 가 레이아웃 깨짐 없이 표시
-- [ ] `./gradlew buildPlugin` 으로 `build/distributions/*.zip` 생성
+- [x] `./gradlew runIde` 로 샌드박스 IDE 가 실행되고, 그 안에서 임의의 .xlsx 파일을 더블클릭하면 커스텀 뷰어가 열린다
+- [x] `doc/감리작업/BAS_DE11_프로그램 목록_v1.8_20260508.xlsx` 가 정상 표시되며 한글이 깨지지 않는다
+- [x] 시트 탭으로 시트 전환 가능
+- [x] 결합셀이 많은 메뉴구조 xlsx 가 레이아웃 깨짐 없이 표시
+- [x] `./gradlew buildPlugin` 으로 `build/distributions/*.zip` 생성
 - [ ] 팀원 PC IntelliJ 에 "Install Plugin from Disk" 로 설치 성공
 - [ ] 설치된 IDE 에서 동일 동작 확인
 
@@ -290,3 +290,133 @@ git push -u origin main
 - [obiscr/ExcelReader](https://github.com/obiscr/ExcelReader) — 기능 벤치마크
 - [Custom Plugin Repository](https://plugins.jetbrains.com/docs/intellij/custom-plugin-repository.html)
 - [Publishing a Plugin](https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html)
+
+---
+
+## 13. Phase 1 진행 상황 / Phase 2 인수인계
+
+> 다음 세션에서 Phase 2 작업을 이어가는 분(또는 본인)을 위한 인수인계 기록.
+> Phase 1 (MVP) 완료 시점: **2026-05-11**
+
+### 13.1 Phase 1 (MVP) 구현 완료 항목
+
+#### 클래스 (모두 `kr.bsen.intellij.xlsxviewer` 패키지)
+- `XlsxFileType` — `.xlsx` 확장자를 binary + readOnly FileType 으로 등록
+- `XlsxFileEditorProvider` — `FileEditorProvider + DumbAware`, `HIDE_DEFAULT_EDITOR` 정책
+- `XlsxFileEditor` — 읽기 전용 FileEditor, `dispose()` 에서 워크북 `close()`
+- `parser.WorkbookLoader` — POI `XSSFWorkbook` 로딩 + 100MB 경고 다이얼로그 + `UserCancelledException`
+- `ui.SheetTableModel` — `AbstractTableModel`, 셀 타입별 값 + 결합셀 좌상단 매핑 + Excel 컬럼명 생성
+- `ui.XlsxViewerPanel` — `JBTabbedPane(BOTTOM)` + 시트별 `JBScrollPane(JBTable)` + 좌측 행 번호 헤더
+- `XlsxViewerBundle` — `DynamicBundle` 상속, 메시지 키 접근자
+
+#### 리소스
+- `src/main/resources/META-INF/plugin.xml` — `fileType` + `fileEditorProvider` 등록 활성
+- `src/main/resources/messages/XlsxViewerBundle.properties` — 한국어 default
+- `src/main/resources/messages/XlsxViewerBundle_en.properties` — 영어 stub
+
+#### 요구사항 매핑
+
+| 요구사항            | 충족 위치 |
+|---------------------|----------|
+| FR-1 파일 타입 등록  | `XlsxFileType` + `plugin.xml` |
+| FR-2 커스텀 에디터    | `XlsxFileEditorProvider` |
+| FR-3 워크북 파싱     | `WorkbookLoader` (XSSFWorkbook) |
+| FR-4 시트 탭        | `XlsxViewerPanel` (`JBTabbedPane`) |
+| FR-5 테이블 렌더     | `XlsxViewerPanel` + `SheetTableModel` |
+| FR-6 셀 값 표시      | `SheetTableModel.formatCell()` |
+| FR-7 결합셀 처리     | `SheetTableModel.buildMergeIndex()` |
+| FR-8 한글 인코딩     | OOXML UTF-8 + IntelliJ 기본 폰트 (별도 작업 없음) |
+| FR-9 읽기 전용       | `XlsxFileEditor.isModified() = false` |
+| NFR-2 100MB 경고    | `WorkbookLoader.confirmOrThrow()` |
+| NFR-3 호환성        | `gradle.properties` (since `251`, until `261.*`) |
+| NFR-4 JDK 21        | `build.gradle.kts` `kotlin.jvmToolchain(21)` |
+| NFR-6 한국어 UI     | `XlsxViewerBundle` + 한국어 기본 properties |
+
+### 13.2 만난 이슈와 해결
+
+#### 13.2.1 `instrumentCode` 태스크 + Microsoft 빌드 OpenJDK 21 충돌
+- **증상**: `runIde` 실행 시 `Execution failed for task ':instrumentCode'. > C:\Users\<user>\.jdks\ms-21.0.11\Packages does not exist.`
+- **원인 추정**: IntelliJ Platform Gradle Plugin 2.x 의 `instrumentCode` 태스크가 Microsoft 배포판 JDK 의 release 정보 (`IMPLEMENTOR="Microsoft"`) 를 보고 Microsoft Store / MSIX 형식의 `Packages` 하위 디렉토리를 가정. 일반 OpenJDK 표준 레이아웃에는 그 디렉토리가 없어 실패
+- **해결**: `build.gradle.kts` 의 `intellijPlatform { ... }` 블록에 `instrumentCode = false` 추가
+- **영향**: `.form` GUI 디자이너 파일 처리 불가 + `@NotNull/@Nullable` 런타임 바이트코드 주입 안됨. 둘 다 MVP 에서 사용 안 하므로 무해
+- **재발 시 대안**: Temurin / Corretto / JBR 등 Microsoft 외 vendor 의 JDK 21 로 Gradle JVM 변경하면 `instrumentCode = true` 로 되돌릴 수 있음
+
+#### 13.2.2 POI `log4j-api` `NoClassDefFoundError`
+- **증상**: `.xlsx` 열 때 `java.lang.NoClassDefFoundError: org/apache/logging/log4j/LogManager`
+- **원인**: 요건정의서 §10.5 의 `exclude(group = "org.apache.logging.log4j")` 가 너무 광범위해서 POI 가 직접 호출하는 `log4j-api` 까지 제거됨
+- **해결**: `module = "log4j-core"` 로 한정해서 출력 구현만 제외. `log4j-api` 는 유지
+- **잔여**: 첫 POI 사용 시 콘솔에 `Log4j2 could not find a logging implementation ... Using SimpleLogger to log to the console` 한 줄이 표시됨. 무해한 정보 메시지
+- **시도 실패한 우회**: `log4j-to-slf4j` 브리지를 추가하면 IntelliJ Platform 의 SLF4J 1.x 와 본 플러그인의 SLF4J 2.x API 가 충돌 (`SLF4JServiceProvider not a subtype` 에러). Revert 후 cosmetic 메시지 그대로 수용. 정 거슬리면 `log4j-core` 동봉(약 1.6MB 증가) 이 더 단순한 옵션
+
+#### 13.2.3 `HIDE_DEFAULT_EDITOR` 정책의 `DumbAware` 필수 조건
+- **증상**: `runIde` 후 `.xlsx` 열기 시 `PluginException: HIDE_DEFAULT_EDITOR is supported only for DumbAware providers`
+- **해결**: `XlsxFileEditorProvider implements FileEditorProvider, DumbAware`
+- **참고**: `DumbAware` 는 마커 인터페이스라 메서드 추가 없음. 인덱스 의존이 없는 에디터 프로바이더는 항상 안전하게 마킹 가능
+
+### 13.3 환경 메모
+
+#### 13.3.1 CLI `gradlew` 실행 시 JDK 21 매핑
+- 시스템 `JAVA_HOME` 이 JDK 11 이하를 가리키면 Gradle 9.5 가 `Gradle requires JVM 17 or later` 로 거부
+- 현재 개발자 환경의 JDK 21 경로: `C:\Users\sumin\.jdks\ms-21.0.11` (Microsoft 빌드, IntelliJ 가 자동 다운로드한 위치)
+- PowerShell 임시 우회:
+  ```powershell
+  $env:JAVA_HOME = "C:\Users\sumin\.jdks\ms-21.0.11"
+  $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+  .\gradlew.bat buildPlugin
+  ```
+- 영구 해결: 시스템 환경변수 `JAVA_HOME` 을 JDK 21 경로로 갱신
+- IntelliJ 내부 Gradle 패널은 별도의 "Gradle JVM" 설정을 따르므로 시스템 `JAVA_HOME` 영향 없음 (§10.3 설정대로면 IDE 패널에서는 항상 동작)
+
+#### 13.3.2 첫 `runIde` 부팅 시 로그 노이즈 (모두 무해)
+다음 메시지들은 본 플러그인과 무관하며 IntelliJ 샌드박스 환경에서 항상 발생함. 무시 가능:
+- `[cds] Archived non-system classes are disabled` — JVM CDS 비활성 (커스텀 ClassLoader 사용 시 표준)
+- `BundledSharedIndexProvider - Bundled shared index is not found` — 새 샌드박스 첫 부팅 시 표준
+- `JavaLibraryModificationTracker ... created too early` (긴 stacktrace 포함) — Kotlin 플러그인 내부 경쟁상태
+- `preload=NOT_HEADLESS must be used only for core services` — Kotlin / CodeWithMe 플러그인의 자체 경고
+
+### 13.4 Phase 2 진입 시 우선순위 추천
+
+§8 로드맵의 Phase 2 항목 중 영향도 큰 순서:
+
+1. **검색·정렬·필터** — 가장 자주 요청되는 기능
+   - 진입점: `XlsxViewerPanel` 상단에 검색 toolbar 추가
+   - `JBTable.setRowSorter(new TableRowSorter<>(model))` + `RowFilter.regexFilter(...)` 패턴
+   - 결합셀이 있는 모델에서 정렬은 의미가 모호하므로 검색·필터 우선
+2. **셀 서식 (배경/폰트)** — 공문서 가독성 직결
+   - 진입점: POI `CellStyle.getFillForegroundColor()` + `Font` 추출
+   - 적용: 커스텀 `TableCellRenderer` 또는 `JBTable.prepareRenderer()` 오버라이드
+3. **Freeze Panes** — 큰 시트 탐색 편의
+   - POI `Sheet.getPaneInformation()` 으로 freeze 위치 추출
+   - `JBScrollPane` 의 `setRowHeader/setColumnHeader` 분할 또는 별도 viewport 분할
+4. **한국어 자모 분리 검색** — 1번 검색 인프라 완성 후 위에 얹기
+   - Hangul Jamo Unicode 분해 (`java.text.Normalizer.normalize(s, Form.NFD)`) 후 substring 매칭
+
+### 13.5 Phase 1 미완료 / 검증 필요 항목
+
+- [ ] 빌드된 ZIP (`build/distributions/xlsx-viewer-0.1.0.zip`) 을 본인 IntelliJ Ultimate 에 "Install Plugin from Disk" 로 설치 후 동일 동작 확인 (§11 DoD 잔여)
+- [ ] 팀원 PC 에 ZIP 전달 후 설치 검증 (§11 DoD 잔여)
+- [ ] `META-INF/pluginIcon.svg` 추가 (16x16, 13x13) — §7 확장성
+- [ ] `.github/workflows/build.yml` 활성화 (현재 템플릿 기본값 유지) — §7 확장성
+- [ ] Self-signed `signPlugin` 인증서 발급 + CI 시크릿 등록 — §7 확장성
+- [ ] Phase 2 진입 시 위 §13.4 1번부터
+
+### 13.6 핵심 파일 빠른 참조
+
+```
+src/main/java/kr/bsen/intellij/xlsxviewer/
+├── XlsxFileType.java               # FR-1
+├── XlsxFileEditorProvider.java     # FR-2, DumbAware
+├── XlsxFileEditor.java             # FR-9, dispose
+├── XlsxViewerBundle.java           # NFR-6
+├── parser/
+│   └── WorkbookLoader.java         # FR-3, NFR-2
+└── ui/
+    ├── SheetTableModel.java        # FR-5, FR-6, FR-7
+    └── XlsxViewerPanel.java        # FR-4, FR-5
+
+src/main/resources/
+├── META-INF/plugin.xml             # extensions 등록
+└── messages/
+    ├── XlsxViewerBundle.properties     # 한국어 default
+    └── XlsxViewerBundle_en.properties  # 영어 stub
+```
