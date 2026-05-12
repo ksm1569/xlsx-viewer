@@ -391,6 +391,8 @@ git push -u origin main
 4. **한국어 자모 분리 검색** — 1번 검색 인프라 완성 후 위에 얹기
    - Hangul Jamo Unicode 분해 (`java.text.Normalizer.normalize(s, Form.NFD)`) 후 substring 매칭
 
+> **[2026-05-12 완료]** 위 1~4 모두 Phase 2 (V1) 구현. 상세는 §13.7 참고. 자모 검색은 NFD 전체 분해 대신 한국 사용자에게 더 친숙한 초성 변환(`util.HangulSearch.toChosung`)으로 구현했고, Freeze Panes 는 V1 상단 행 freeze 만 지원 (좌측 열 freeze 는 Phase 3 인수인계).
+
 ### 13.5 Phase 1 미완료 / 검증 필요 항목
 
 - [ ] 빌드된 ZIP (`build/distributions/xlsx-viewer-0.1.0.zip`) 을 본인 IntelliJ Ultimate 에 "Install Plugin from Disk" 로 설치 후 동일 동작 확인 (§11 DoD 잔여)
@@ -398,25 +400,101 @@ git push -u origin main
 - [ ] `META-INF/pluginIcon.svg` 추가 (16x16, 13x13) — §7 확장성
 - [ ] `.github/workflows/build.yml` 활성화 (현재 템플릿 기본값 유지) — §7 확장성
 - [ ] Self-signed `signPlugin` 인증서 발급 + CI 시크릿 등록 — §7 확장성
-- [ ] Phase 2 진입 시 위 §13.4 1번부터
+- [x] Phase 2 (V1) 완료 (2026-05-12) — 상세는 §13.7
 
-### 13.6 핵심 파일 빠른 참조
+### 13.6 핵심 파일 빠른 참조 (Phase 2 완료 시점)
 
 ```
 src/main/java/kr/bsen/intellij/xlsxviewer/
-├── XlsxFileType.java               # FR-1
-├── XlsxFileEditorProvider.java     # FR-2, DumbAware
-├── XlsxFileEditor.java             # FR-9, dispose
-├── XlsxViewerBundle.java           # NFR-6
+├── XlsxFileType.java                    # FR-1
+├── XlsxFileEditorProvider.java          # FR-2, DumbAware
+├── XlsxFileEditor.java                  # FR-9, dispose
+├── XlsxViewerBundle.java                # NFR-6
 ├── parser/
-│   └── WorkbookLoader.java         # FR-3, NFR-2
-└── ui/
-    ├── SheetTableModel.java        # FR-5, FR-6, FR-7
-    └── XlsxViewerPanel.java        # FR-4, FR-5
+│   └── WorkbookLoader.java              # FR-3, NFR-2
+├── ui/
+│   ├── SheetTableModel.java             # FR-5, FR-6, FR-7 + P2-2 결합셀 origin 매핑
+│   ├── XlsxViewerPanel.java             # FR-4, FR-5 + P2-1 검색 toolbar + P2-3 freeze 통합
+│   ├── SheetSearchController.java       # P2-1 검색 상태 + P2-4 자모 분기
+│   ├── SearchableCellRenderer.java      # P2-1 하이라이트 + P2-2 셀 서식
+│   ├── SheetSearchToolbar.java          # P2-1 검색 UI + P2-4 자모 토글
+│   └── CellStyleResolver.java           # P2-2 POI XSSFColor → AWT 변환
+└── util/
+    └── HangulSearch.java                # P2-4 한글 초성 변환
 
 src/main/resources/
-├── META-INF/plugin.xml             # extensions 등록
+├── META-INF/plugin.xml                  # extensions 등록
 └── messages/
-    ├── XlsxViewerBundle.properties     # 한국어 default
-    └── XlsxViewerBundle_en.properties  # 영어 stub
+    ├── XlsxViewerBundle.properties      # 한국어 default (+ P2 search.* 키)
+    └── XlsxViewerBundle_en.properties   # 영어 stub
 ```
+
+### 13.7 Phase 2 (안정화) 구현 완료 항목 [2026-05-12]
+
+#### 새 클래스
+- `ui.SheetSearchController` — 시트별 검색 상태(질의어, case, 자모, 필터) + 매칭 좌표/행 집합 관리. RowFilter 어댑터 제공
+- `ui.SearchableCellRenderer` — 매칭 하이라이트 + POI 셀 서식 통합 렌더러. 우선순위: 선택 → 매칭 하이라이트 → 셀 서식 → 테마 기본
+- `ui.SheetSearchToolbar` — 시트마다 상단 검색 바. IntelliJ `SearchTextField` + Case/자모/필터 토글
+- `ui.CellStyleResolver` — POI `XSSFColor` → AWT `Color` 변환. `CellStyle.getIndex()` 단위 캐싱
+- `util.HangulSearch` — 한글 음절을 초성으로 변환 (예: "이순신" → "ㅇㅅㅅ"). 영문/숫자는 lowercase 통일
+
+#### 수정된 클래스
+- `ui.SheetTableModel` — 결합셀 매핑을 `Map<Long, int[]>` (origin 좌표) 로 변경. 새 `getStyleSourceCell(row, col)` 로 결합 영역 전체에 좌상단 셀 스타일 노출
+- `ui.XlsxViewerPanel` — 시트당 컨테이너 = [검색 toolbar (NORTH) + 메인 ScrollPane (CENTER)]. freeze 가 있으면 `setColumnHeaderView` 에 [컬럼 헤더 + topTable] 끼움 (가로 스크롤 자동 동기화). `TableRowSorter` 는 검색 필터 + freeze 분리 RowFilter 의 호스트 역할
+
+#### Phase 2 요구사항 매핑
+
+- **검색·필터 (§8)** — `SheetSearchController` + `SearchableCellRenderer` + `SheetSearchToolbar`
+- **셀 서식 시각 재현 (§8)** — `CellStyleResolver` + `SearchableCellRenderer`
+- **Freeze Panes (§8)** — `XlsxViewerPanel.buildSheetView()` 의 `setColumnHeaderView` 분기
+- **한국어 자모 검색 (§8)** — `util.HangulSearch.toChosung()` + `SheetSearchController.normalize()`
+- **결합셀 + 검색·필터 공존** — `TableRowSorter` 모든 컬럼 `setSortable(false)` (정렬 비활성, RowFilter 만 사용)
+
+### 13.8 Phase 2 에서 만난 이슈와 해결
+
+#### 13.8.1 POI 5.3.0 의 `CellStyle.getFillPattern()` 시그니처 변경
+- **증상**: 먼저 `style.getFillPatternType() == FillPatternType.NO_FILL` 로 작성 → `cannot find symbol: getFillPatternType()`. 이어서 `style.getFillPattern() == FillPatternType.NO_FILL.getCode()` → `bad operand types: FillPatternType vs short`
+- **원인**: POI 5.3.0 에서 `CellStyle.getFillPattern()` 의 반환 타입이 `short` → `FillPatternType` 으로 변경됨. 별도 `getFillPatternType()` 메서드는 존재하지 않는다
+- **해결**: `style.getFillPattern() == FillPatternType.NO_FILL` 로 직접 비교 (위치: `CellStyleResolver.extractFill`)
+
+#### 13.8.2 `PaneInformation` 패키지 이동
+- **증상**: `import org.apache.poi.ss.usermodel.PaneInformation` → `cannot find symbol`
+- **원인**: POI 5.x 에서 `PaneInformation` 이 `org.apache.poi.ss.usermodel` 에서 `org.apache.poi.ss.util` 로 이동
+- **해결**: import 만 변경
+
+#### 13.8.3 Swing `RowFilter` 제네릭 invariant
+- **증상**: `RowFilter<SheetTableModel, Integer> = search.rowFilter()` 가 `RowFilter<TableModel, Integer>` 를 받지 못함
+- **원인**: Java 제네릭 invariant. `TableModel` 이 `SheetTableModel` 의 supertype 이라도 `RowFilter<TableModel,…>` 와 `RowFilter<SheetTableModel,…>` 는 호환되지 않음
+- **해결**: 모든 RowFilter 변수/메서드 시그니처를 `RowFilter<TableModel, Integer>` 로 통일. `TableRowSorter.setRowFilter` 의 매개변수는 `? super M` 와일드카드라 그대로 호환
+
+#### 13.8.4 한국어 xlsx 의 셀 색상이 다크 IntelliJ 에서 가독성 깨짐 (`P2-fix1`)
+- **증상**: 1차 구현 후 FO/BO 시트 데이터 행이 "검은 배경에 검은 글자"로 보임. 표지·개정이력 시트의 일부 셀도 동일 현상
+- **진단**: `build/xlsx-debug/analyze*.py` (gitignored) 로 xlsx 의 `xl/styles.xml` 과 `xl/theme/theme1.xml` 을 직접 파싱해 셀 색 정의를 추적. 두 가지 패턴 발견:
+    1. 한국어 헤더 셀이 `theme 0 (Dark 1)` 색을 사용 — POI 가 theme.xml 변환에 실패하면 RGB(0,0,0) = 검정으로 fallback
+    2. FO 데이터 행은 `fillId=0 (NO_FILL)` + `font color rgb=FF000000` — Excel 의 흰 배경을 전제로 디자인됨. 다크 IntelliJ 배경에 그대로 두면 검정 글자가 묻힘
+- **해결**:
+    - `CellStyleResolver.toAwt()`: `isAuto()` / `isThemed()` / `IndexedColors.AUTOMATIC (64)` 색은 무시하고 IntelliJ 테마에 위임. `getRGB()` (tint 미적용) 를 우선 시도해 POI 의 tint 변환 실패 회피
+    - `SearchableCellRenderer`: 명시적 fg/bg 명도 차가 0.25 미만이면 가독성 자동 보정. **NO_FILL 셀은 흰 배경 강제** — Excel 원본 의도(셀 데이터 영역 = 라이트) 재현하면서 헤더/탭/검색바는 IntelliJ 다크 유지하는 절충
+- **참고**: 동일 xlsx 를 다크 vs 라이트 IDE 테마에서 비교해야 정확한 원인 파악 가능. POI 가 전부 잘못한 게 아니라 *xlsx 원본의 라이트-테마-가정 디자인* 과 *다크 IntelliJ 환경* 의 시각 충돌이 큰 요인
+
+### 13.9 Phase 3 인수인계 / 미완료 항목
+
+#### Phase 2 V1 의 한계 (Phase 3 후보)
+- [ ] **좌측 열 Freeze Panes** — V1 은 상단 N행 freeze 만 지원. 한국 공문서는 헤더 행 freeze 가 압도적이라 V1 으로 충분하지만, 좌측 열 freeze 시트는 일반 스크롤로 표시됨. 4분할 viewport 동기화(corner + 우상단 + 좌하단 + 우하단) 또는 `setRowHeaderView` 에 freeze 열 테이블 끼우는 방식 검토
+- [ ] **indexed / theme color 변환** — `CellStyleResolver.toAwt()` 는 `XSSFColor.getRGB()` / `getRGBWithTint()` 가 null 이면 변환 실패 (indexed-only, theme-only 셀). POI `IndexedColors` enum + 워크북 theme 추출로 보강 필요
+- [ ] **검색 성능 (큰 시트)** — `DocumentListener` 가 매 키 입력마다 `recompute()` 를 동기 호출. 10만 행+ 시트는 입력 latency 발생 가능. 200ms debounce 또는 `SwingWorker` 비동기 인덱싱으로 개선
+- [ ] **검색 결과 이전/다음 네비게이션** — 매칭 셀로 스크롤 점프하는 버튼. 현재는 하이라이트만
+
+#### §8 Phase 3 로드맵 (그대로 유지)
+- [ ] xls(구버전 바이너리) 지원
+- [ ] csv 통합 뷰어
+- [ ] 차트 미리보기
+- [ ] 셀 편집 (읽기→쓰기 전환)
+- [ ] 다국어 UI 보강 (영어 외)
+- [ ] JetBrains Marketplace 공식 등록 (`pluginIcon.svg`, `signPlugin`, CI 활성)
+
+#### Phase 1 잔여 (그대로 유지)
+- [ ] 빌드된 ZIP 을 본인/팀원 IntelliJ Ultimate 에 "Install Plugin from Disk" 로 설치 후 동일 동작 확인 (§11 DoD)
+- [ ] `META-INF/pluginIcon.svg` 추가 (§7 확장성)
+- [ ] `.github/workflows/build.yml` 활성화 (§7 확장성)
+- [ ] Self-signed `signPlugin` 인증서 발급 + CI 시크릿 등록 (§7 확장성)

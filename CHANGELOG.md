@@ -4,11 +4,29 @@
 
 ## [Unreleased]
 
-### 예정
-- 검색·정렬·필터 (Phase 2)
-- 셀 서식(배경/폰트) 시각 재현 (Phase 2)
-- Freeze Panes (Phase 2)
-- 한국어 자모 분리 검색 (Phase 2)
+### 예정 (Phase 3)
+- 좌측 열 Freeze Panes (현 V1 미지원)
+- 셀 indexed/theme color 변환
+- xls(구버전) 지원, csv 통합, 차트 미리보기, 셀 편집
+- JetBrains Marketplace 공식 등록 (pluginIcon.svg, signPlugin, CI)
+
+## [0.2.0] - 2026-05-12
+
+### Added (Phase 2)
+- 시트별 검색 도구바 + 매칭 셀 하이라이트 + 필터 모드(매칭된 행만 표시)
+- 한글 자모(초성) 검색 토글 — `ㅇㅅㅅ` → "이순신" 매칭 (`util.HangulSearch.toChosung`)
+- POI `CellStyle` 기반 셀 배경/글자색/굵기/기울임 시각 재현 (배경 명도에 따라 글자색 가독성 자동 보정)
+- 상단 N행 Freeze Panes — `JBScrollPane.setColumnHeaderView` 에 freeze 영역 테이블을 끼워 가로 스크롤 자동 동기화
+
+### Technical
+- POI 5.3.0 API 시그니처 차이 흡수 — `CellStyle.getFillPattern()` 가 `FillPatternType` 을 직접 반환, `PaneInformation` 은 `ss.util` 패키지로 이동
+- `SheetTableModel` 결합셀 매핑을 좌상단 좌표 형태로 변경 → 결합 영역 전체에 좌상단 셀 스타일 적용
+- 결합셀이 있는 시트는 정렬 의미가 모호하므로 `TableRowSorter` 의 모든 컬럼 `setSortable(false)` (Sorter 는 RowFilter 호스트 역할만)
+- 셀 색상 변환 규칙 (다크 테마 IntelliJ 위에서 Excel 원본 가독성 확보):
+    - `isAuto()` / `isThemed()` / `IndexedColors.AUTOMATIC` 색은 변환하지 않고 IntelliJ 테마 기본색에 위임. POI 가 theme/auto 를 RGB(0,0,0) = 검정으로 fallback 하는 케이스 방어
+    - 색 추출 순서를 `getRGB()` (tint 미적용) 우선 + `getRGBWithTint()` fallback 으로 변경. POI 의 한국어 워크북 tint 변환이 어두운 회색으로 빗나가는 케이스 방어
+    - 명시적 fg/bg 의 명도 차가 0.25 미만이면 가독성 우선해 fg 자동 보정
+    - `NO_FILL` 셀(명시적 배경 없음)은 다크 IntelliJ 배경 대신 흰 배경을 강제. Excel 원본이 흰 배경을 전제로 디자인한 의도(셀 데이터 영역 = 라이트, 헤더/탭/검색바 = IntelliJ 다크 테마) 재현
 
 ## [0.1.0] - 2026-05-11
 
@@ -29,5 +47,6 @@
 - `instrumentCode` 비활성화 — Microsoft 빌드 OpenJDK 21 (`ms-21.0.11`) 호환 회피
 - 템플릿 Kotlin 스캐폴드 (`org.jetbrains.plugins.template`) 전체 제거
 
-[Unreleased]: https://github.com/ksm1569/xlsx-viewer/compare/0.1.0...HEAD
+[Unreleased]: https://github.com/ksm1569/xlsx-viewer/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/ksm1569/xlsx-viewer/releases/tag/0.2.0
 [0.1.0]: https://github.com/ksm1569/xlsx-viewer/releases/tag/0.1.0

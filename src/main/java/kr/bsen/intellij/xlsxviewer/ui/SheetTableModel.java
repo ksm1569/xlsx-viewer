@@ -7,6 +7,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.table.AbstractTableModel;
 import java.text.SimpleDateFormat;
@@ -23,6 +24,7 @@ import java.util.Map;
  *   <li>FR-5: 컬럼 헤더는 Excel 스타일 (A, B, ..., Z, AA, AB, ...).</li>
  *   <li>FR-6: STRING/NUMERIC/BOOLEAN/Formula(캐시) 처리, Date 는 한국 로케일 yyyy-MM-dd HH:mm:ss.</li>
  *   <li>FR-7: 결합셀의 좌상단만 값 표시, 나머지 셀은 빈 문자열.</li>
+ *   <li>Phase 2-2: 결합셀 비-원점 좌표도 좌상단 셀의 스타일을 노출하도록 {@link #getStyleSourceCell} 제공.</li>
  * </ul>
  */
 public final class SheetTableModel extends AbstractTableModel {
@@ -34,14 +36,14 @@ public final class SheetTableModel extends AbstractTableModel {
     private final Sheet sheet;
     private final int rowCount;
     private final int columnCount;
-    /** key(row,col) → true 이면 머지 영역에서 좌상단이 아닌 셀 (빈칸 표시). */
-    private final Map<Long, Boolean> mergedNonOrigin;
+    /** (row,col) → [originRow, originCol]. 진입돼 있으면 결합 영역 내 비-원점 셀. */
+    private final Map<Long, int[]> mergedOriginMap;
 
     public SheetTableModel(@NotNull Sheet sheet) {
         this.sheet = sheet;
         this.rowCount = computeRowCount(sheet);
         this.columnCount = computeColumnCount(sheet);
-        this.mergedNonOrigin = buildMergeIndex(sheet);
+        this.mergedOriginMap = buildMergeIndex(sheet);
     }
 
     private static int computeRowCount(Sheet sheet) {
@@ -62,15 +64,16 @@ public final class SheetTableModel extends AbstractTableModel {
         return Math.max(max, 0);
     }
 
-    private static Map<Long, Boolean> buildMergeIndex(Sheet sheet) {
-        Map<Long, Boolean> map = new HashMap<>();
+    private static Map<Long, int[]> buildMergeIndex(Sheet sheet) {
+        Map<Long, int[]> map = new HashMap<>();
         for (CellRangeAddress region : sheet.getMergedRegions()) {
             int firstRow = region.getFirstRow();
             int firstCol = region.getFirstColumn();
+            int[] origin = {firstRow, firstCol};
             for (int r = firstRow; r <= region.getLastRow(); r++) {
                 for (int c = firstCol; c <= region.getLastColumn(); c++) {
                     if (r == firstRow && c == firstCol) continue;
-                    map.put(key(r, c), Boolean.TRUE);
+                    map.put(key(r, c), origin);
                 }
             }
         }
@@ -78,7 +81,7 @@ public final class SheetTableModel extends AbstractTableModel {
     }
 
     private static long key(int row, int col) {
-        // col 은 Excel 최대 16384(2^14) 이내. 32-bit shift 로 충분히 안전.
+        // col 은 Excel 최대 16384(2^14) 이내. 20-bit shift 로 충분히 안전.
         return ((long) row << 20) | (col & 0xFFFFFL);
     }
 
@@ -109,13 +112,26 @@ public final class SheetTableModel extends AbstractTableModel {
 
     @Override
     public @NotNull Object getValueAt(int rowIndex, int columnIndex) {
-        if (mergedNonOrigin.containsKey(key(rowIndex, columnIndex))) {
+        if (mergedOriginMap.containsKey(key(rowIndex, columnIndex))) {
             return "";
         }
         Row row = sheet.getRow(rowIndex);
         if (row == null) return "";
         Cell cell = row.getCell(columnIndex, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
         return cell == null ? "" : formatCell(cell);
+    }
+
+    /**
+     * 셀 서식 추출을 위한 source cell.
+     * 결합 영역 내부 셀이면 좌상단 셀, 일반 셀이면 그 셀 자체.
+     */
+    public @Nullable Cell getStyleSourceCell(int row, int col) {
+        int[] origin = mergedOriginMap.get(key(row, col));
+        int sr = origin == null ? row : origin[0];
+        int sc = origin == null ? col : origin[1];
+        Row poiRow = sheet.getRow(sr);
+        if (poiRow == null) return null;
+        return poiRow.getCell(sc, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
     }
 
     private static String formatCell(@NotNull Cell cell) {
