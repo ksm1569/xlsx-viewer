@@ -2,6 +2,7 @@ package kr.bsen.intellij.xlsxviewer.ui;
 
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTabbedPane;
+import com.intellij.ui.render.RenderingUtil;
 import com.intellij.ui.table.JBTable;
 import kr.bsen.intellij.xlsxviewer.XlsxViewerBundle;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -119,6 +120,10 @@ public final class XlsxViewerPanel extends JPanel {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         table.setCellSelectionEnabled(true);
         table.getTableHeader().setReorderingAllowed(false);
+        // 플랫폼 기본 행 hover 는 단색 회색 띠로 행을 덮어 셀 서식/검색 하이라이트가 사라진다.
+        // JBTable.prepareRenderer 가 hover 행에 hover bg 를 강제 setBackground 하는 동작을 끄고,
+        // Renderer 에서 직접 베이스 색에 반투명 오버레이를 합성해 모던한 효과로 교체한다.
+        RenderingUtil.setHoverPaintingDisabled(table, true);
         table.setDefaultRenderer(Object.class, new SearchableCellRenderer(search, model, styleResolver));
         return table;
     }
